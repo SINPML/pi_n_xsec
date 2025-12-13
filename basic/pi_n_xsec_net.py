@@ -1,3 +1,5 @@
+import os
+import time
 import wandb
 import torch
 import random
@@ -7,14 +9,14 @@ import pandas as pd
 import torch.nn as nn
 import lightning as L
 
+from functools import reduce
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from lightning.pytorch.loggers import WandbLogger
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, TensorDataset
-from lightning.pytorch.callbacks import TQDMProgressBar, EarlyStopping
-
+from lightning.pytorch.loggers import WandbLogger, CSVLogger
+from lightning.pytorch.callbacks import TQDMProgressBar, EarlyStopping, ModelCheckpoint
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
@@ -22,11 +24,6 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 @dataclass
 class TrainConfig:
-    wandb_enabled: bool = True
-    wandb_project: str = "pi_plus_n"
-    wandb_save_dir: str = "./wandb_local_logs"
-
-    data_path: str = "../data/clasdb_pi_plus_n.txt"
     seed: int = 1438
 
     test_size: float = 0.2
@@ -38,13 +35,21 @@ class TrainConfig:
     ebeam_fix_to: int = 65671
     ebeam_fix_value: float = 5.754
 
-    net_architecture: Tuple[int, ...] = (5, 100, 100, 1)
+    net_architecture: Tuple[int, ...] = (5, 1000, 1000, 1)
+    n_params = sum(x * y for x, y in zip(net_architecture[:-1], net_architecture[1:]))
     activation: str = "ReLU"
 
     batch_size: int = 256
     max_epochs: int = 100
     lr: float = 1e-3
     optim: str = "Adam"
+
+    data_path: str = "../data/clasdb_pi_plus_n.txt"
+    wandb_enabled: bool = True
+    wandb_project: str = "pi_plus_n"
+    wandb_save_dir: str = "./wandb_local_logs"
+    run_name: str = f"pi_plus_n_layers_{len(net_architecture)}_params_{n_params//1000}k_v{int(time.time())}"  # base name
+    run_dir: str = os.path.join(wandb_save_dir, wandb_project, run_name)
 
     lr_factor: float = 0.5
     lr_patience: int = 5
@@ -53,7 +58,7 @@ class TrainConfig:
     early_stopping: bool = True
     es_monitor: str = "val_loss"
     es_mode: str = "min"
-    es_patience: int = 5
+    es_patience: int = 10
     es_min_delta: float = 0.0
     es_verbose: bool = False
 
@@ -64,6 +69,7 @@ class TrainConfig:
 
     accelerator: str = "gpu"
     devices: str = "auto"
+
 
 def set_random_seed(seed: int) -> None:
     torch.manual_seed(seed)
@@ -250,13 +256,25 @@ class PiPlusNElectroproductionRegressor:
         self._trainer: Optional[L.Trainer] = None
         self._pl_module: Optional[PiPlusNLightningModule] = None
 
+        self.csv_logger = CSVLogger(save_dir=self.cfg.run_dir, name="csv")
+
         self.wandb_logger = None
         if self.cfg.wandb_enabled:
             wandb.login()
             self.wandb_logger = WandbLogger(
                 project=self.cfg.wandb_project,
-                save_dir=self.cfg.wandb_save_dir,
+                save_dir=self.cfg.run_dir,
+                name=self.cfg.run_name,
+                log_model=False
             )
+
+        self.ckpt_cb = ModelCheckpoint(
+            dirpath=f"{self.cfg.run_dir}/checkpoints",
+            filename="best-{epoch:03d}-{val_loss:.5f}",
+            monitor="val_loss",
+            mode="min",
+            save_top_k=1,
+        )
 
     def load_and_prepare_dataframe(self) -> pd.DataFrame:
         df = pd.read_csv(self.cfg.data_path, delimiter="\t", header=None)
@@ -347,7 +365,7 @@ class PiPlusNElectroproductionRegressor:
             log_every_n_steps=10,
             callbacks=callbacks,
             enable_progress_bar=True,
-            logger=self.wandb_logger
+            logger=[self.csv_logger, self.wandb_logger] if self.wandb_logger else self.csv_logger
         )
 
         trainer.fit(model=pl_module, train_dataloaders=train_dl, val_dataloaders=val_dl)
