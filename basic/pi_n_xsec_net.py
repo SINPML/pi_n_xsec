@@ -75,7 +75,7 @@ class TrainConfig:
     early_stopping: bool = True
     es_monitor: str = "val_loss"
     es_mode: str = "min"
-    es_patience: int = 20
+    es_patience: int = 5
     es_min_delta: float = 0.0
     es_verbose: bool = False
 
