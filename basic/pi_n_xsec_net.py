@@ -1,3 +1,4 @@
+import wandb
 import torch
 import random
 
@@ -9,45 +10,22 @@ import lightning as L
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+from lightning.pytorch.loggers import WandbLogger
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, TensorDataset
 from lightning.pytorch.callbacks import TQDMProgressBar, EarlyStopping
+
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-
-def set_random_seed(seed: int) -> None:
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    L.seed_everything(seed, workers=True)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-
-class EpochOnlyProgressBar(TQDMProgressBar):
-    def init_validation_tqdm(self):
-        bar = super().init_validation_tqdm()
-        bar.disable = True
-        return bar
-
-    def init_test_tqdm(self):
-        bar = super().init_test_tqdm()
-        bar.disable = True
-        return bar
-
-    def init_predict_tqdm(self):
-        bar = super().init_predict_tqdm()
-        bar.disable = True
-        return bar
-
-
 @dataclass
 class TrainConfig:
+    wandb_enabled: bool = True
+    wandb_project: str = "pi_plus_n"
+    wandb_save_dir: str = "./wandb_local_logs"
+
     data_path: str = "../data/clasdb_pi_plus_n.txt"
     seed: int = 1438
 
@@ -86,6 +64,33 @@ class TrainConfig:
 
     accelerator: str = "gpu"
     devices: str = "auto"
+
+def set_random_seed(seed: int) -> None:
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    L.seed_everything(seed, workers=True)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+class EpochOnlyProgressBar(TQDMProgressBar):
+    def init_validation_tqdm(self):
+        bar = super().init_validation_tqdm()
+        bar.disable = True
+        return bar
+
+    def init_test_tqdm(self):
+        bar = super().init_test_tqdm()
+        bar.disable = True
+        return bar
+
+    def init_predict_tqdm(self):
+        bar = super().init_predict_tqdm()
+        bar.disable = True
+        return bar
 
 
 class PiPlusNLightningModule(L.LightningModule):
@@ -245,6 +250,14 @@ class PiPlusNElectroproductionRegressor:
         self._trainer: Optional[L.Trainer] = None
         self._pl_module: Optional[PiPlusNLightningModule] = None
 
+        self.wandb_logger = None
+        if self.cfg.wandb_enabled:
+            wandb.login()
+            self.wandb_logger = WandbLogger(
+                project=self.cfg.wandb_project,
+                save_dir=self.cfg.wandb_save_dir,
+            )
+
     def load_and_prepare_dataframe(self) -> pd.DataFrame:
         df = pd.read_csv(self.cfg.data_path, delimiter="\t", header=None)
         df.columns = ["Ebeam", "W", "Q2", "cos_theta", "phi", "dsigma_dOmega", "error", "id"]
@@ -334,6 +347,7 @@ class PiPlusNElectroproductionRegressor:
             log_every_n_steps=10,
             callbacks=callbacks,
             enable_progress_bar=True,
+            logger=self.wandb_logger
         )
 
         trainer.fit(model=pl_module, train_dataloaders=train_dl, val_dataloaders=val_dl)
@@ -354,6 +368,10 @@ class PiPlusNElectroproductionRegressor:
 
         self._trainer = trainer
         self._pl_module = pl_module
+
+        if self.cfg.wandb_enabled:
+            wandb.finish()
+
         return {"mae": float(final["mae"]), "mse": float(final["mse"])}
 
     @staticmethod
