@@ -21,6 +21,17 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
+
+def set_random_seed(seed: int) -> None:
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    L.seed_everything(seed, workers=True)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 @dataclass
 class TrainConfig:
     seed: int = 1438
@@ -33,6 +44,7 @@ class TrainConfig:
     ebeam_fix_from: int = 8314
     ebeam_fix_to: int = 65671
     ebeam_fix_value: float = 5.754
+    phi_to_rad: bool = True
 
     net_architecture: Tuple[int, ...] = (5,60,80,100,120,140,240,340,440,640,2000,1040,640,340,240,140,100,80,60,20,1)
     n_params = sum(x * y for x, y in zip(net_architecture[:-1], net_architecture[1:]))
@@ -68,17 +80,6 @@ class TrainConfig:
 
     accelerator: str = "gpu"
     devices: str = "auto"
-
-
-def set_random_seed(seed: int) -> None:
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    L.seed_everything(seed, workers=True)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
 
 class EpochOnlyProgressBar(TQDMProgressBar):
@@ -242,6 +243,7 @@ class PiPlusNLightningModule(L.LightningModule):
 
 
 class PiPlusNElectroproductionRegressor:
+    DATA_COLUMNS = ["Ebeam", "W", "Q2", "cos_theta", "phi", "dsigma_dOmega", "error", "id"]
     FEATURE_COLUMNS: List[str] = ["Ebeam", "W", "Q2", "cos_theta", "cos_phi"]
     LABEL_COLUMN: str = "dsigma_dOmega"
 
@@ -276,20 +278,26 @@ class PiPlusNElectroproductionRegressor:
         )
 
     def load_and_prepare_dataframe(self) -> pd.DataFrame:
-        df = pd.read_csv(self.cfg.data_path, delimiter="\t", header=None)
-        df.columns = ["Ebeam", "W", "Q2", "cos_theta", "phi", "dsigma_dOmega", "error", "id"]
+        if '.txt' in self.cfg.data_path:
+            df = pd.read_csv(self.cfg.data_path, delimiter="\t", header=None)
+        else:
+            df = pd.read_csv(self.cfg.data_path, delimiter=",")
+        df.columns = self.DATA_COLUMNS
 
         df.loc[self.cfg.ebeam_fix_from:self.cfg.ebeam_fix_to, "Ebeam"] = self.cfg.ebeam_fix_value
 
-        phi_rad = np.deg2rad(df["phi"].to_numpy(dtype=np.float64))
-        df["phi"] = phi_rad
-        df["cos_phi"] = np.cos(phi_rad)
+        if self.cfg.phi_to_rad:
+            phi_rad = np.deg2rad(df["phi"].to_numpy(dtype=np.float64))
+            df["phi"] = phi_rad
+            df["cos_phi"] = np.cos(phi_rad)
+        else:
+            df["cos_phi"] = np.cos(df["phi"])
 
-        df = df.iloc[df[["Ebeam", "W", "Q2", "cos_theta", "phi"]].drop_duplicates().index]
+        df = df.iloc[df[self.FEATURE_COLUMNS].drop_duplicates().index]
         df = df.drop(columns=["id"])
 
         q = self.cfg.clip_quantile
-        df = df[df["dsigma_dOmega"] <= df["dsigma_dOmega"].quantile(q)]
+        df = df[df[self.LABEL_COLUMN] <= df[self.LABEL_COLUMN].quantile(q)]
         df = df[df["error"] <= df["error"].quantile(q)]
 
         return df.reset_index(drop=True)
