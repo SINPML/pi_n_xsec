@@ -44,7 +44,6 @@ class TrainConfig:
     ebeam_fix_from: int = 8314
     ebeam_fix_to: int = 65671
     ebeam_fix_value: float = 5.754
-    phi_to_rad: bool = True
 
     net_architecture: Tuple[int, ...] = (5,60,80,100,120,140,240,340,440,640,2000,1040,640,340,240,140,100,80,60,20,1)
     n_params = sum(x * y for x, y in zip(net_architecture[:-1], net_architecture[1:]))
@@ -69,7 +68,7 @@ class TrainConfig:
     early_stopping: bool = True
     es_monitor: str = "val_loss"
     es_mode: str = "min"
-    es_patience: int = 15
+    es_patience: int = 10
     es_min_delta: float = 0.0
     es_verbose: bool = False
 
@@ -286,12 +285,9 @@ class PiPlusNElectroproductionRegressor:
 
         df.loc[self.cfg.ebeam_fix_from:self.cfg.ebeam_fix_to, "Ebeam"] = self.cfg.ebeam_fix_value
 
-        if self.cfg.phi_to_rad:
-            phi_rad = np.deg2rad(df["phi"].to_numpy(dtype=np.float64))
-            df["phi"] = phi_rad
-            df["cos_phi"] = np.cos(phi_rad)
-        else:
-            df["cos_phi"] = np.cos(df["phi"])
+        phi_rad = np.deg2rad(df["phi"].to_numpy(dtype=np.float64))
+        df["phi"] = phi_rad
+        df["cos_phi"] = np.cos(phi_rad)
 
         df = df.iloc[df[self.FEATURE_COLUMNS].drop_duplicates().index]
         df = df.drop(columns=["id"])
