@@ -36,8 +36,8 @@ def set_random_seed(seed: int) -> None:
 class TrainConfig:
     seed: int = 1438
 
-    test_size: float = 0.3
-    val_size_in_residual: float = 0.66
+    test_size: float = 0.66
+    val_size_in_residual: float = 0.3
     split_random_state: int = 42
 
     clip_quantile: float = 0.96
