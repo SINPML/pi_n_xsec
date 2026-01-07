@@ -1,7 +1,8 @@
 Content:
 
-FCNN_unified.ipynb - main file with training script
-checks_unified.ipynb - all the validation and analysis for this projects 
+./basic dir contains training and validation procedure. 
+./MAID dir designed for MAID2007 modeled data comparison. 
+./replicas part dedicated to the comprehensive bootstrap comparison. 
 
 Abstact:
 
