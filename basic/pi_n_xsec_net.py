@@ -12,14 +12,14 @@ import lightning as L
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, TensorDataset
 from lightning.pytorch.loggers import WandbLogger, CSVLogger
 from lightning.pytorch.callbacks import TQDMProgressBar, EarlyStopping, ModelCheckpoint
-
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 
 def set_random_seed(seed: int) -> None:
