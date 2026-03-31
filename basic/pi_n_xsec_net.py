@@ -36,8 +36,8 @@ def set_random_seed(seed: int) -> None:
 class TrainConfig:
     seed: int = 1438
 
-    test_size: float = 0.66
-    val_size_in_residual: float = 0.3
+    test_size: float = 0.3
+    val_size_in_residual: float = 0.5
     split_random_state: int = 42
 
     clip_quantile: float = 0.96
@@ -74,7 +74,7 @@ class TrainConfig:
 
     # test metrics policy
     test_each_epoch: bool = True
-    test_every_n_epochs: int = 1
+    test_every_n_epochs: int = 30
     run_final_test: bool = True
 
     accelerator: str = "gpu"
